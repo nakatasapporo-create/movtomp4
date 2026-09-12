@@ -218,7 +218,7 @@
         <ul>
           <li>変換中はこの画面を閉じず、iPadを充電しておくと安心です。</li>
           <li>長い動画ほど時間と空きメモリが必要です。まず短い動画でお試しください。</li>
-          <li>index.htmlをGitHub Pagesなどへ置き、https://で開いてください。HTMLファイルの直接実行では変換できません。</li>
+          <li>index.htmlとffmpegフォルダをGitHub Pagesへ置き、https://で開いてください。HTMLファイルの直接実行では変換できません。</li>
           <li>初回は変換エンジンを読み込むため、インターネット接続が必要です。</li>
           <li>動画がすでにH.264なら再圧縮せず、高速にMP4へ入れ替えます。HEVC動画だけH.264へ変換します。</li>
           <li>Windows 10では、保存したMP4を「映画＆テレビ」やVLCで再生できます。</li>
@@ -229,16 +229,15 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
       動画は端末内で処理され、サーバーへ送信されません
     </p>
-    <footer>出力形式：MP4 / H.264 / AAC / yuv420p ・ GitHub対応版 v3.0</footer>
+    <footer>出力形式：MP4 / H.264 / AAC / yuv420p ・ iPad Safari対応版 v4.0</footer>
   </main>
 
   <script>
     'use strict';
 
     const CDN_BASE = 'https://cdn.jsdelivr.net/npm';
-    // classWorkerURLを使う場合はmodule Workerになるため、CDN版coreはESMを使用する。
-    const REMOTE_CORE = `${CDN_BASE}/@ffmpeg/core@0.12.10/dist/esm`;
-    const REMOTE_WRAPPER = `${CDN_BASE}/@ffmpeg/ffmpeg@0.12.15/dist/umd`;
+    // iPad Safariではblob:のmodule Workerを避け、従来型Worker＋UMD coreを使う。
+    const REMOTE_CORE = `${CDN_BASE}/@ffmpeg/core@0.12.10/dist/umd`;
     const LOCAL_ASSETS = './ffmpeg';
     const MAX_RECOMMENDED = 300 * 1024 * 1024;
 
@@ -270,7 +269,6 @@
     let sourceDuration = 0;
     let lastLog = '';
     let logHistory = [];
-    let assetMode = '';
     let stageNote = '';
     let startedAt = 0;
     let timerId = 0;
@@ -429,23 +427,12 @@
       }
       try {
         await loadScript(`${LOCAL_ASSETS}/ffmpeg.js`);
-        assetMode = 'local';
       } catch (_) {
-        await loadScript(`${REMOTE_WRAPPER}/ffmpeg.js`);
-        assetMode = 'remote';
+        throw new Error('ffmpeg/ffmpeg.jsを読み込めません。index.htmlとffmpegフォルダを同じ階層へアップロードしてください。');
       }
       if (!self.FFmpegWASM || !self.FFmpegWASM.FFmpeg) {
         throw new Error('FFmpeg本体を読み込めませんでした。');
       }
-    }
-
-    async function blobURL(url, mime) {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`必要な部品を取得できませんでした（${response.status}）`);
-      const data = await response.arrayBuffer();
-      const objectURL = URL.createObjectURL(new Blob([data], { type: mime }));
-      engineURLs.push(objectURL);
-      return objectURL;
     }
 
     async function localCoreIsUsable() {
@@ -483,7 +470,7 @@
         setProgress(10 + Math.max(0, Math.min(1, progress)) * 84, '動画を変換しています…', 'iPad内で処理中です');
       });
 
-      const useLocalCore = assetMode === 'local' && await localCoreIsUsable();
+      const useLocalCore = await localCoreIsUsable();
       if (useLocalCore) {
         await ffmpeg.load({
           coreURL: new URL(`${LOCAL_ASSETS}/ffmpeg-core.js`, location.href).href,
@@ -491,12 +478,10 @@
         });
       } else {
         setProgress(3, '変換エンジンを読み込み中…', '大容量部品を専用配信先から読み込んでいます');
-        const [classWorkerURL, coreURL, wasmURL] = await Promise.all([
-          blobURL(`${REMOTE_WRAPPER}/814.ffmpeg.js`, 'text/javascript'),
-          blobURL(`${REMOTE_CORE}/ffmpeg-core.js`, 'text/javascript'),
-          blobURL(`${REMOTE_CORE}/ffmpeg-core.wasm`, 'application/wasm')
-        ]);
-        await ffmpeg.load({ classWorkerURL, coreURL, wasmURL });
+        await ffmpeg.load({
+          coreURL: `${REMOTE_CORE}/ffmpeg-core.js`,
+          wasmURL: `${REMOTE_CORE}/ffmpeg-core.wasm`
+        });
       }
       loaded = true;
     }
