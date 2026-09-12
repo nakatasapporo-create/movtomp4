@@ -218,7 +218,8 @@
         <ul>
           <li>変換中はこの画面を閉じず、iPadを充電しておくと安心です。</li>
           <li>長い動画ほど時間と空きメモリが必要です。まず短い動画でお試しください。</li>
-          <li>配布フォルダ一式をWebサーバーへ置き、https://で開いてください。HTMLファイルの直接実行では変換できません。</li>
+          <li>index.htmlをGitHub Pagesなどへ置き、https://で開いてください。HTMLファイルの直接実行では変換できません。</li>
+          <li>初回は変換エンジンを読み込むため、インターネット接続が必要です。</li>
           <li>動画がすでにH.264なら再圧縮せず、高速にMP4へ入れ替えます。HEVC動画だけH.264へ変換します。</li>
           <li>Windows 10では、保存したMP4を「映画＆テレビ」やVLCで再生できます。</li>
         </ul>
@@ -228,7 +229,7 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
       動画は端末内で処理され、サーバーへ送信されません
     </p>
-    <footer>出力形式：MP4 / H.264 / AAC / yuv420p</footer>
+    <footer>出力形式：MP4 / H.264 / AAC / yuv420p ・ GitHub対応版 v3.0</footer>
   </main>
 
   <script>
@@ -424,7 +425,7 @@
     async function loadWrapper() {
       if (self.FFmpegWASM && self.FFmpegWASM.FFmpeg) return;
       if (location.protocol === 'file:') {
-        throw new Error('このHTMLを「ファイル」アプリから直接開いています。変換用Workerは直接実行では動作しません。配布フォルダ一式をCloudflare Pagesなどへアップロードし、https://で開いてください。');
+        throw new Error('このHTMLを「ファイル」アプリから直接開いています。変換用Workerは直接実行では動作しません。index.htmlをGitHub Pagesなどへアップロードし、https://で開いてください。');
       }
       try {
         await loadScript(`${LOCAL_ASSETS}/ffmpeg.js`);
@@ -445,6 +446,20 @@
       const objectURL = URL.createObjectURL(new Blob([data], { type: mime }));
       engineURLs.push(objectURL);
       return objectURL;
+    }
+
+    async function localCoreIsUsable() {
+      try {
+        const url = new URL(`${LOCAL_ASSETS}/ffmpeg-core.wasm`, location.href).href;
+        const response = await fetch(url, { method: 'HEAD', cache: 'no-store' });
+        if (!response.ok) return false;
+        const type = (response.headers.get('content-type') || '').toLowerCase();
+        const size = Number(response.headers.get('content-length') || 0);
+        // 正しいWASMは約31MB。404 HTMLやPagesの代替ページを確実に除外する。
+        return type.includes('application/wasm') && (!size || size > 10 * 1024 * 1024);
+      } catch (_) {
+        return false;
+      }
     }
 
     async function loadEngine() {
@@ -468,12 +483,14 @@
         setProgress(10 + Math.max(0, Math.min(1, progress)) * 84, '動画を変換しています…', 'iPad内で処理中です');
       });
 
-      if (assetMode === 'local') {
+      const useLocalCore = assetMode === 'local' && await localCoreIsUsable();
+      if (useLocalCore) {
         await ffmpeg.load({
           coreURL: new URL(`${LOCAL_ASSETS}/ffmpeg-core.js`, location.href).href,
           wasmURL: new URL(`${LOCAL_ASSETS}/ffmpeg-core.wasm`, location.href).href
         });
       } else {
+        setProgress(3, '変換エンジンを読み込み中…', '大容量部品を専用配信先から読み込んでいます');
         const [classWorkerURL, coreURL, wasmURL] = await Promise.all([
           blobURL(`${REMOTE_WRAPPER}/814.ffmpeg.js`, 'text/javascript'),
           blobURL(`${REMOTE_CORE}/ffmpeg-core.js`, 'text/javascript'),
@@ -630,10 +647,12 @@
           console.error(err, lastLog);
           const raw = [String(err?.message || err), ...logHistory.slice(-10)].filter(Boolean).join('\n');
           let message = `「${stage}」で停止しました。`;
-          if (/memory|out of bounds|allocation|abort/i.test(raw)) {
+          if (/doesn.?t parse|magic word|\\0asm|WebAssembly\.Module|application\/wasm/i.test(raw)) {
+            message += ' 変換エンジンのファイルが正しく配信されていません。最新版のHTMLへ入れ替えてください。';
+          } else if (/out of memory|memory access|out of bounds|allocation failed|cannot enlarge memory/i.test(raw)) {
             message += ' iPadのメモリ不足です。短い動画または「軽量」でお試しください。';
           } else if (/worker|script|fetch|network|load|cors/i.test(raw)) {
-            message += ' 変換用ファイルを読み込めません。配布フォルダを一式アップロードし、https://で開いてください。';
+            message += ' 変換用ファイルを読み込めません。インターネット接続を確認し、GitHub Pagesを再読み込みしてください。';
           } else {
             message += ' 下の詳しいエラーを確認してください。';
           }
