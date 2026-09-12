@@ -180,12 +180,12 @@
       <div class="options">
         <div class="step">
           <div class="step-no">2</div>
-          <div><h2>画質を選ぶ</h2><p>迷った場合は「標準」がおすすめです。</p></div>
+          <div><h2>画質を選ぶ</h2><p>iPadでは「標準」がおすすめです。</p></div>
         </div>
         <div class="quality-grid" role="radiogroup" aria-label="変換画質">
-          <div class="quality"><input type="radio" name="quality" id="small" value="small"><label for="small"><strong>軽量</strong><span>最大720p相当<br>共有向け</span></label></div>
-          <div class="quality"><input type="radio" name="quality" id="standard" value="standard" checked><label for="standard"><strong>標準</strong><span>最大1080p相当<br>おすすめ</span></label></div>
-          <div class="quality"><input type="radio" name="quality" id="high" value="high"><label for="high"><strong>高画質</strong><span>最大1080p相当<br>容量大きめ</span></label></div>
+          <div class="quality"><input type="radio" name="quality" id="small" value="small"><label for="small"><strong>軽量</strong><span>最大540p相当<br>短時間</span></label></div>
+          <div class="quality"><input type="radio" name="quality" id="standard" value="standard" checked><label for="standard"><strong>標準</strong><span>最大720p相当<br>iPadおすすめ</span></label></div>
+          <div class="quality"><input type="radio" name="quality" id="high" value="high"><label for="high"><strong>高画質</strong><span>最大1080p相当<br>時間が必要</span></label></div>
         </div>
       </div>
 
@@ -217,7 +217,8 @@
         <ul>
           <li>変換中はこの画面を閉じず、iPadを充電しておくと安心です。</li>
           <li>長い動画ほど時間と空きメモリが必要です。まず短い動画でお試しください。</li>
-          <li>初回のエンジン読込にはインターネット接続が必要です。動画そのものは外部へ送信しません。</li>
+          <li>配布フォルダ一式をWebサーバーへ置き、https://で開いてください。HTMLファイルの直接実行では変換できません。</li>
+          <li>動画がすでにH.264なら再圧縮せず、高速にMP4へ入れ替えます。HEVC動画だけH.264へ変換します。</li>
           <li>Windows 10では、保存したMP4を「映画＆テレビ」やVLCで再生できます。</li>
         </ul>
       </details>
@@ -229,14 +230,15 @@
     <footer>出力形式：MP4 / H.264 / AAC / yuv420p</footer>
   </main>
 
-  <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/umd/ffmpeg.js"></script>
   <script>
     'use strict';
 
     const CDN_BASE = 'https://cdn.jsdelivr.net/npm';
-    const CORE_BASE = `${CDN_BASE}/@ffmpeg/core@0.12.10/dist/umd`;
-    const CLASS_WORKER = `${CDN_BASE}/@ffmpeg/ffmpeg@0.12.15/dist/umd/814.ffmpeg.js`;
-    const MAX_RECOMMENDED = 450 * 1024 * 1024;
+    // classWorkerURLを使う場合はmodule Workerになるため、CDN版coreはESMを使用する。
+    const REMOTE_CORE = `${CDN_BASE}/@ffmpeg/core@0.12.10/dist/esm`;
+    const REMOTE_WRAPPER = `${CDN_BASE}/@ffmpeg/ffmpeg@0.12.15/dist/umd`;
+    const LOCAL_ASSETS = './ffmpeg';
+    const MAX_RECOMMENDED = 300 * 1024 * 1024;
 
     const $ = (id) => document.getElementById(id);
     const fileInput = $('fileInput');
@@ -265,11 +267,16 @@
     let engineURLs = [];
     let sourceDuration = 0;
     let lastLog = '';
+    let logHistory = [];
+    let assetMode = '';
+    let stageNote = '';
+    let startedAt = 0;
+    let timerId = 0;
 
     const profiles = {
-      small:    { max: 1280, crf: '28', audio: '96k',  label: '軽量' },
-      standard: { max: 1920, crf: '23', audio: '128k', label: '標準' },
-      high:     { max: 1920, crf: '18', audio: '160k', label: '高画質' }
+      small:    { max: 960,  crf: '30', audio: '96k',  label: '軽量' },
+      standard: { max: 1280, crf: '26', audio: '128k', label: '標準' },
+      high:     { max: 1920, crf: '22', audio: '160k', label: '高画質' }
     };
 
     function formatBytes(bytes) {
@@ -287,13 +294,24 @@
       return m ? `${m}分${String(s % 60).padStart(2, '0')}秒` : `${s}秒`;
     }
 
+    function elapsedText() {
+      if (!startedAt) return '';
+      const seconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+      return `経過 ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+    }
+
+    function renderStatusNote() {
+      statusNote.textContent = [stageNote, busy ? elapsedText() : ''].filter(Boolean).join(' ・ ');
+    }
+
     function setProgress(value, text, note) {
       const p = Math.max(0, Math.min(100, Math.round(value)));
       barFill.style.width = `${p}%`;
       percent.textContent = `${p}%`;
       progressBar.setAttribute('aria-valuenow', String(p));
       if (text) statusText.textContent = text;
-      if (note) statusNote.textContent = note;
+      if (note) stageNote = note;
+      renderStatusNote();
     }
 
     function hideMessages() {
@@ -302,8 +320,25 @@
       errorBox.textContent = '';
     }
 
-    function showError(message) {
-      errorBox.textContent = message;
+    function showError(message, detail = '') {
+      errorBox.replaceChildren();
+      const title = document.createElement('strong');
+      title.textContent = message;
+      errorBox.append(title);
+      if (detail) {
+        const details = document.createElement('details');
+        details.style.marginTop = '9px';
+        details.style.paddingTop = '8px';
+        const summary = document.createElement('summary');
+        summary.textContent = '詳しいエラーを表示';
+        const pre = document.createElement('pre');
+        pre.style.whiteSpace = 'pre-wrap';
+        pre.style.wordBreak = 'break-word';
+        pre.style.fontSize = '.75rem';
+        pre.textContent = detail.slice(-3000);
+        details.append(summary, pre);
+        errorBox.append(details);
+      }
       errorBox.classList.add('show');
     }
 
@@ -375,6 +410,33 @@
       clearResult();
     }
 
+    function loadScript(src) {
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.onload = resolve;
+        script.onerror = () => reject(new Error(`スクリプトを読み込めません: ${src}`));
+        document.head.append(script);
+      });
+    }
+
+    async function loadWrapper() {
+      if (self.FFmpegWASM && self.FFmpegWASM.FFmpeg) return;
+      if (location.protocol === 'file:') {
+        throw new Error('このHTMLを「ファイル」アプリから直接開いています。変換用Workerは直接実行では動作しません。配布フォルダ一式をCloudflare Pagesなどへアップロードし、https://で開いてください。');
+      }
+      try {
+        await loadScript(`${LOCAL_ASSETS}/ffmpeg.js`);
+        assetMode = 'local';
+      } catch (_) {
+        await loadScript(`${REMOTE_WRAPPER}/ffmpeg.js`);
+        assetMode = 'remote';
+      }
+      if (!self.FFmpegWASM || !self.FFmpegWASM.FFmpeg) {
+        throw new Error('FFmpeg本体を読み込めませんでした。');
+      }
+    }
+
     async function blobURL(url, mime) {
       const response = await fetch(url);
       if (!response.ok) throw new Error(`必要な部品を取得できませんでした（${response.status}）`);
@@ -386,23 +448,38 @@
 
     async function loadEngine() {
       if (loaded && ffmpeg) return;
-      if (!self.FFmpegWASM || !self.FFmpegWASM.FFmpeg) {
-        throw new Error('変換プログラムを読み込めませんでした。通信状態を確認して再読み込みしてください。');
-      }
-      setProgress(2, '変換エンジンを読み込み中…', '初回のみ約32MBを読み込みます。');
+      await loadWrapper();
+      setProgress(2, '変換エンジンを読み込み中…', '初回は30～40秒ほどかかる場合があります');
       ffmpeg = new FFmpegWASM.FFmpeg();
-      ffmpeg.on('log', ({ message }) => { lastLog = message || lastLog; });
+      ffmpeg.on('log', ({ message }) => {
+        if (!message) return;
+        lastLog = message;
+        logHistory.push(message);
+        if (logHistory.length > 20) logHistory.shift();
+        const match = message.match(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/);
+        if (match && sourceDuration > 0 && busy) {
+          const done = Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+          setProgress(10 + Math.min(done / sourceDuration, 1) * 84, '動画を変換しています…', 'iPad内で処理中です');
+        }
+      });
       ffmpeg.on('progress', ({ progress }) => {
         if (!busy || cancelled || !Number.isFinite(progress)) return;
-        setProgress(10 + Math.max(0, Math.min(1, progress)) * 84, '動画を変換しています…', '画面を閉じず、そのままお待ちください。');
+        setProgress(10 + Math.max(0, Math.min(1, progress)) * 84, '動画を変換しています…', 'iPad内で処理中です');
       });
 
-      const [classWorkerURL, coreURL, wasmURL] = await Promise.all([
-        blobURL(CLASS_WORKER, 'text/javascript'),
-        blobURL(`${CORE_BASE}/ffmpeg-core.js`, 'text/javascript'),
-        blobURL(`${CORE_BASE}/ffmpeg-core.wasm`, 'application/wasm')
-      ]);
-      await ffmpeg.load({ classWorkerURL, coreURL, wasmURL });
+      if (assetMode === 'local') {
+        await ffmpeg.load({
+          coreURL: new URL(`${LOCAL_ASSETS}/ffmpeg-core.js`, location.href).href,
+          wasmURL: new URL(`${LOCAL_ASSETS}/ffmpeg-core.wasm`, location.href).href
+        });
+      } else {
+        const [classWorkerURL, coreURL, wasmURL] = await Promise.all([
+          blobURL(`${REMOTE_WRAPPER}/814.ffmpeg.js`, 'text/javascript'),
+          blobURL(`${REMOTE_CORE}/ffmpeg-core.js`, 'text/javascript'),
+          blobURL(`${REMOTE_CORE}/ffmpeg-core.wasm`, 'application/wasm')
+        ]);
+        await ffmpeg.load({ classWorkerURL, coreURL, wasmURL });
+      }
       loaded = true;
     }
 
@@ -432,18 +509,67 @@
       }
     }
 
-    function buildArgs(inputPath, outputName, profile) {
+    async function inspectStreams(inputPath) {
+      const probeName = `probe_${Date.now()}.json`;
+      try {
+        const code = await ffmpeg.ffprobe([
+          '-v', 'error', '-show_entries',
+          'format=duration:stream=index,codec_type,codec_name,width,height',
+          '-of', 'json', inputPath, '-o', probeName
+        ]);
+        if (code !== 0) return null;
+        const data = await ffmpeg.readFile(probeName);
+        const text = new TextDecoder().decode(data);
+        const info = JSON.parse(text);
+        const duration = Number(info?.format?.duration);
+        if (Number.isFinite(duration) && duration > 0) sourceDuration = duration;
+        return info;
+      } catch (_) {
+        return null;
+      } finally {
+        try { await ffmpeg.deleteFile(probeName); } catch (_) {}
+      }
+    }
+
+    function buildArgs(inputPath, outputName, profile, info) {
+      const streams = info?.streams || [];
+      const video = streams.find(stream => stream.codec_type === 'video');
+      const audio = streams.find(stream => stream.codec_type === 'audio');
+
+      if (video?.codec_name === 'h264') {
+        const args = ['-i', inputPath, '-map', '0:v:0', '-map', '0:a:0?', '-c:v', 'copy'];
+        if (audio && audio.codec_name !== 'aac') {
+          args.push('-c:a', 'aac', '-b:a', profile.audio, '-ac', '2', '-ar', '48000');
+        } else {
+          args.push('-c:a', 'copy');
+        }
+        args.push('-movflags', '+faststart', outputName);
+        return { args, copiedVideo: true };
+      }
+
       const scale = `scale=w='min(${profile.max}\\,iw)':h='min(${profile.max}\\,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`;
-      return [
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      return { args: [
         '-i', inputPath,
         '-map', '0:v:0', '-map', '0:a:0?',
-        '-vf', `${scale},fps=30`,
-        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', profile.crf,
+        '-vf', `${scale},fps=30,format=yuv420p`,
+        '-c:v', 'libx264', '-preset', isIOS ? 'ultrafast' : 'veryfast', '-crf', profile.crf,
         '-pix_fmt', 'yuv420p', '-profile:v', 'main', '-level:v', '4.1',
         '-c:a', 'aac', '-b:a', profile.audio, '-ac', '2', '-ar', '48000',
         '-movflags', '+faststart', '-metadata:s:v:0', 'rotate=0',
         '-max_muxing_queue_size', '2048', outputName
-      ];
+      ], copiedVideo: false };
+    }
+
+    function startTimer() {
+      startedAt = Date.now();
+      clearInterval(timerId);
+      timerId = setInterval(renderStatusNote, 1000);
+    }
+
+    function stopTimer() {
+      clearInterval(timerId);
+      timerId = 0;
     }
 
     async function convert() {
@@ -453,28 +579,40 @@
       busy = true;
       cancelled = false;
       lastLog = '';
+      logHistory = [];
       convertBtn.disabled = true;
       cancelBtn.classList.add('show');
       status.classList.add('show');
-      setProgress(0, '準備しています…', '初回は変換エンジン（約32MB）を読み込みます。');
+      startTimer();
+      setProgress(0, '準備しています…', '変換環境を確認しています');
 
       const quality = document.querySelector('input[name="quality"]:checked').value;
       const profile = profiles[quality];
       const inputName = `input_${Date.now()}.mov`;
       const outputName = `output_${Date.now()}.mp4`;
       let inputInfo = null;
+      let stage = '起動前';
+      let conversion = null;
 
       try {
+        stage = '変換エンジンの読込';
         await loadEngine();
         if (cancelled) return;
-        setProgress(7, '動画を準備しています…', `${formatBytes(selectedFile.size)}の動画を読み込んでいます。`);
+        stage = 'MOVファイルの読込';
+        setProgress(7, '動画を準備しています…', `${formatBytes(selectedFile.size)}の動画を読み込んでいます`);
         inputInfo = await putInput(selectedFile, inputName);
         if (cancelled) return;
-        setProgress(10, '動画を変換しています…', '画面を閉じず、そのままお待ちください。');
-        const exitCode = await ffmpeg.exec(buildArgs(inputInfo.path, outputName, profile));
+        stage = '動画形式の確認';
+        setProgress(9, '動画の形式を確認しています…', 'H.264なら高速処理、HEVCなら互換変換します');
+        const streamInfo = await inspectStreams(inputInfo.path);
+        conversion = buildArgs(inputInfo.path, outputName, profile, streamInfo);
+        stage = conversion.copiedVideo ? 'MP4への高速入替' : 'H.264への変換';
+        setProgress(10, conversion.copiedVideo ? 'MP4へ高速変換しています…' : 'H.264へ変換しています…', conversion.copiedVideo ? '映像の再圧縮は行いません' : 'iPad内で処理中です。数分以上かかる場合があります');
+        const exitCode = await ffmpeg.exec(conversion.args);
         if (cancelled) return;
         if (exitCode !== 0) throw new Error(`変換処理が終了できませんでした（コード ${exitCode}）`);
-        setProgress(96, 'MP4を仕上げています…', 'まもなく完了します。');
+        stage = '完成ファイルの読込';
+        setProgress(96, 'MP4を仕上げています…', 'まもなく完了します');
         const data = await ffmpeg.readFile(outputName);
         const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
         outputURL = URL.createObjectURL(new Blob([bytes], { type: 'video/mp4' }));
@@ -482,21 +620,30 @@
         preview.src = outputURL;
         downloadBtn.href = outputURL;
         downloadBtn.download = fileName;
-        $('resultMeta').textContent = `${profile.label}・${formatBytes(bytes.byteLength)}・H.264/AAC`;
+        $('resultMeta').textContent = `${conversion.copiedVideo ? '高速変換' : profile.label}・${formatBytes(bytes.byteLength)}・H.264/AAC`;
         result.classList.add('show');
-        setProgress(100, '変換が完了しました', '下の「MP4を保存する」をタップしてください。');
+        setProgress(100, '変換が完了しました', '下の「MP4を保存する」をタップしてください');
         result.scrollIntoView({ behavior: 'smooth', block: 'start' });
       } catch (err) {
         if (!cancelled) {
           console.error(err, lastLog);
-          const memoryHint = selectedFile && selectedFile.size > 200 * 1024 * 1024
-            ? ' 動画が大きい場合は、短く分けるか「軽量」でお試しください。' : '';
-          showError(`変換できませんでした。通信状態とiPadの空きメモリを確認してください。${memoryHint}`);
-          setProgress(0, '変換を完了できませんでした', 'もう一度お試しください。');
+          const raw = [String(err?.message || err), ...logHistory.slice(-10)].filter(Boolean).join('\n');
+          let message = `「${stage}」で停止しました。`;
+          if (/memory|out of bounds|allocation|abort/i.test(raw)) {
+            message += ' iPadのメモリ不足です。短い動画または「軽量」でお試しください。';
+          } else if (/worker|script|fetch|network|load|cors/i.test(raw)) {
+            message += ' 変換用ファイルを読み込めません。配布フォルダを一式アップロードし、https://で開いてください。';
+          } else {
+            message += ' 下の詳しいエラーを確認してください。';
+          }
+          showError(message, raw);
+          setProgress(0, '変換を完了できませんでした', `停止位置：${stage}`);
         }
       } finally {
         if (ffmpeg && ffmpeg.loaded && !cancelled) await cleanInput(inputInfo, outputName);
         busy = false;
+        stopTimer();
+        renderStatusNote();
         convertBtn.disabled = !selectedFile;
         cancelBtn.classList.remove('show');
       }
@@ -509,6 +656,7 @@
       ffmpeg = null;
       loaded = false;
       busy = false;
+      stopTimer();
       convertBtn.disabled = !selectedFile;
       cancelBtn.classList.remove('show');
       setProgress(0, '変換を中止しました', '再度「MP4に変換する」を押すとやり直せます。');
