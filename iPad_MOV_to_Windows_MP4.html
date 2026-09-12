@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f766e">
+  <title>iPad MOV → Windows MP4 変換</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #16302e;
+      --muted: #5b6f6d;
+      --line: #d8e5e2;
+      --card: rgba(255,255,255,.94);
+      --accent: #0f766e;
+      --accent-dark: #0b5f59;
+      --accent-soft: #e6f4f1;
+      --danger: #b42318;
+      --danger-soft: #fff0ee;
+      --shadow: 0 18px 50px rgba(31, 74, 69, .12);
+    }
+
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      min-height: 100svh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 4%, #d6f1ec 0, transparent 30rem),
+        radial-gradient(circle at 95% 12%, #e8eefc 0, transparent 34rem),
+        #f5f8f7;
+      padding: max(20px, env(safe-area-inset-top)) 16px max(28px, env(safe-area-inset-bottom));
+    }
+
+    button, select, input { font: inherit; }
+    button { touch-action: manipulation; }
+    .wrap { width: min(760px, 100%); margin: 0 auto; }
+    header { text-align: center; padding: 22px 8px 18px; }
+    .mark {
+      width: 62px; height: 62px; margin: 0 auto 14px;
+      border-radius: 18px; display: grid; place-items: center;
+      color: white; background: linear-gradient(145deg, #14a194, #0f766e);
+      box-shadow: 0 12px 26px rgba(15,118,110,.25);
+    }
+    h1 { margin: 0; font-size: clamp(1.55rem, 5vw, 2.25rem); letter-spacing: -.03em; }
+    .lead { margin: 10px auto 0; color: var(--muted); line-height: 1.7; }
+
+    .card {
+      background: var(--card); border: 1px solid rgba(255,255,255,.85);
+      border-radius: 24px; box-shadow: var(--shadow); padding: clamp(18px, 4vw, 30px);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    }
+
+    .step { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 16px; }
+    .step-no {
+      flex: 0 0 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+      background: var(--accent-soft); color: var(--accent); font-weight: 800;
+    }
+    .step h2 { margin: 2px 0 3px; font-size: 1.05rem; }
+    .step p { margin: 0; color: var(--muted); font-size: .9rem; line-height: 1.55; }
+
+    .picker {
+      display: block; border: 2px dashed #9bc5c0; border-radius: 20px;
+      padding: 28px 18px; text-align: center; cursor: pointer;
+      background: #f8fcfb; transition: .18s ease; outline: none;
+    }
+    .picker:hover, .picker:focus-within { border-color: var(--accent); background: var(--accent-soft); }
+    .picker.drag { transform: scale(1.01); border-color: var(--accent); background: var(--accent-soft); }
+    .picker svg { color: var(--accent); margin-bottom: 8px; }
+    .picker strong { display: block; font-size: 1.08rem; }
+    .picker span { display: block; color: var(--muted); font-size: .86rem; margin-top: 5px; }
+    #fileInput { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+    .filebox {
+      display: none; align-items: center; gap: 12px; margin-top: 14px; padding: 13px 14px;
+      border-radius: 15px; background: var(--accent-soft); min-width: 0;
+    }
+    .filebox.show { display: flex; }
+    .fileicon { flex: 0 0 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; background: white; color: var(--accent); }
+    .filetext { min-width: 0; flex: 1; }
+    .filename { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .filemeta { color: var(--muted); font-size: .82rem; margin-top: 3px; }
+    .clear {
+      flex: 0 0 auto; border: 0; background: transparent; color: var(--muted);
+      width: 38px; height: 38px; border-radius: 10px; font-size: 1.35rem;
+    }
+    .clear:hover { background: rgba(255,255,255,.75); }
+
+    .options { margin-top: 24px; }
+    .quality-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+    .quality { position: relative; }
+    .quality input { position: absolute; opacity: 0; }
+    .quality label {
+      min-height: 86px; display: flex; flex-direction: column; justify-content: center;
+      border: 1.5px solid var(--line); border-radius: 15px; padding: 11px 8px;
+      text-align: center; cursor: pointer; background: white; transition: .16s ease;
+    }
+    .quality label strong { font-size: .96rem; }
+    .quality label span { color: var(--muted); font-size: .76rem; margin-top: 4px; line-height: 1.35; }
+    .quality input:checked + label { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 2px rgba(15,118,110,.08); }
+    .quality input:focus-visible + label { outline: 3px solid rgba(15,118,110,.22); outline-offset: 2px; }
+
+    .actions { margin-top: 22px; display: grid; gap: 10px; }
+    .primary, .secondary, .download {
+      border: 0; border-radius: 15px; min-height: 54px; padding: 12px 18px;
+      font-weight: 800; cursor: pointer; text-align: center; text-decoration: none;
+      display: flex; align-items: center; justify-content: center; gap: 9px;
+    }
+    .primary { background: var(--accent); color: white; box-shadow: 0 9px 20px rgba(15,118,110,.22); }
+    .primary:hover { background: var(--accent-dark); }
+    .primary:disabled { cursor: not-allowed; opacity: .48; box-shadow: none; }
+    .secondary { display: none; background: white; color: var(--danger); border: 1px solid #efc3bd; }
+    .secondary.show { display: flex; }
+
+    .status { display: none; margin-top: 20px; padding: 16px; border-radius: 16px; background: #f4f8f7; }
+    .status.show { display: block; }
+    .status-head { display: flex; justify-content: space-between; gap: 12px; font-weight: 700; font-size: .92rem; }
+    .bar { height: 12px; overflow: hidden; background: #dce8e6; border-radius: 99px; margin-top: 10px; }
+    .bar > div { width: 0; height: 100%; background: linear-gradient(90deg, #14a194, #0f766e); border-radius: inherit; transition: width .25s ease; }
+    .status small { display: block; margin-top: 9px; color: var(--muted); line-height: 1.5; }
+
+    .alert { display: none; margin-top: 16px; padding: 13px 14px; border-radius: 14px; line-height: 1.55; font-size: .9rem; }
+    .alert.show { display: block; }
+    .alert.warn { background: #fff8e6; color: #73510d; border: 1px solid #f1daa3; }
+    .alert.error { background: var(--danger-soft); color: var(--danger); border: 1px solid #f0c2bc; }
+
+    .result { display: none; margin-top: 20px; border-top: 1px solid var(--line); padding-top: 22px; }
+    .result.show { display: block; }
+    .result h2 { margin: 0 0 12px; font-size: 1.15rem; }
+    video { display: block; width: 100%; max-height: 430px; border-radius: 16px; background: #0d1817; }
+    .result-meta { margin: 10px 0 14px; color: var(--muted); font-size: .88rem; }
+    .download { background: #173f3b; color: white; }
+
+    details { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 16px; }
+    summary { cursor: pointer; color: var(--muted); font-weight: 700; }
+    details ul { color: var(--muted); line-height: 1.65; padding-left: 1.25rem; font-size: .88rem; }
+    .privacy { display: flex; align-items: center; justify-content: center; gap: 7px; margin: 16px 0 0; color: var(--muted); font-size: .82rem; }
+    footer { text-align: center; margin-top: 16px; color: #70817f; font-size: .78rem; line-height: 1.6; }
+
+    @media (max-width: 540px) {
+      .quality-grid { grid-template-columns: 1fr; }
+      .quality label { min-height: auto; flex-direction: row; align-items: center; justify-content: space-between; text-align: left; padding: 13px 15px; }
+      .quality label span { margin: 0 0 0 10px; text-align: right; }
+    }
+    @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <div class="mark" aria-hidden="true">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 10l4.55-2.27A1 1 0 0 1 21 8.62v6.76a1 1 0 0 1-1.45.89L15 14"/><rect x="3" y="5" width="12" height="14" rx="2"/><path d="M7 9h4M7 12h4"/></svg>
+      </div>
+      <h1>iPad MOV → Windows MP4</h1>
+      <p class="lead">MOV動画を、Windows 10で再生しやすい<br>MP4（H.264＋AAC）へ変換します。</p>
+    </header>
+
+    <section class="card" aria-label="動画変換">
+      <div class="step">
+        <div class="step-no">1</div>
+        <div><h2>MOVファイルを選ぶ</h2><p>写真または「ファイル」から動画を選択できます。</p></div>
+      </div>
+
+      <label class="picker" id="dropZone" for="fileInput" tabindex="0">
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 16V4m0 0L8 8m4-4 4 4"/><path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>
+        <strong>タップして動画を選択</strong>
+        <span>MOVを選んでください</span>
+        <input id="fileInput" type="file" accept=".mov,video/quicktime,video/*">
+      </label>
+
+      <div class="filebox" id="fileBox">
+        <div class="fileicon" aria-hidden="true">▶</div>
+        <div class="filetext"><div class="filename" id="fileName"></div><div class="filemeta" id="fileMeta"></div></div>
+        <button class="clear" id="clearBtn" type="button" aria-label="選択を解除">×</button>
+      </div>
+
+      <div class="options">
+        <div class="step">
+          <div class="step-no">2</div>
+          <div><h2>画質を選ぶ</h2><p>迷った場合は「標準」がおすすめです。</p></div>
+        </div>
+        <div class="quality-grid" role="radiogroup" aria-label="変換画質">
+          <div class="quality"><input type="radio" name="quality" id="small" value="small"><label for="small"><strong>軽量</strong><span>最大720p相当<br>共有向け</span></label></div>
+          <div class="quality"><input type="radio" name="quality" id="standard" value="standard" checked><label for="standard"><strong>標準</strong><span>最大1080p相当<br>おすすめ</span></label></div>
+          <div class="quality"><input type="radio" name="quality" id="high" value="high"><label for="high"><strong>高画質</strong><span>最大1080p相当<br>容量大きめ</span></label></div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="primary" id="convertBtn" type="button" disabled>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h11m0 0-3-3m3 3-3 3M20 17H9m0 0 3-3m-3 3 3 3"/></svg>
+          MP4に変換する
+        </button>
+        <button class="secondary" id="cancelBtn" type="button">変換を中止する</button>
+      </div>
+
+      <div class="status" id="status" aria-live="polite">
+        <div class="status-head"><span id="statusText">準備しています…</span><span id="percent">0%</span></div>
+        <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="barFill"></div></div>
+        <small id="statusNote">初回は変換エンジン（約32MB）を読み込みます。</small>
+      </div>
+      <div class="alert warn" id="warning"></div>
+      <div class="alert error" id="error" role="alert"></div>
+
+      <section class="result" id="result" aria-live="polite">
+        <h2>変換が完了しました</h2>
+        <video id="preview" controls playsinline></video>
+        <p class="result-meta" id="resultMeta"></p>
+        <a class="download" id="downloadBtn" href="#" download>MP4を保存する</a>
+      </section>
+
+      <details>
+        <summary>うまく変換するためのポイント</summary>
+        <ul>
+          <li>変換中はこの画面を閉じず、iPadを充電しておくと安心です。</li>
+          <li>長い動画ほど時間と空きメモリが必要です。まず短い動画でお試しください。</li>
+          <li>初回のエンジン読込にはインターネット接続が必要です。動画そのものは外部へ送信しません。</li>
+          <li>Windows 10では、保存したMP4を「映画＆テレビ」やVLCで再生できます。</li>
+        </ul>
+      </details>
+    </section>
+    <p class="privacy">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+      動画は端末内で処理され、サーバーへ送信されません
+    </p>
+    <footer>出力形式：MP4 / H.264 / AAC / yuv420p</footer>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/umd/ffmpeg.js"></script>
+  <script>
+    'use strict';
+
+    const CDN_BASE = 'https://cdn.jsdelivr.net/npm';
+    const CORE_BASE = `${CDN_BASE}/@ffmpeg/core@0.12.10/dist/umd`;
+    const CLASS_WORKER = `${CDN_BASE}/@ffmpeg/ffmpeg@0.12.15/dist/umd/814.ffmpeg.js`;
+    const MAX_RECOMMENDED = 450 * 1024 * 1024;
+
+    const $ = (id) => document.getElementById(id);
+    const fileInput = $('fileInput');
+    const dropZone = $('dropZone');
+    const fileBox = $('fileBox');
+    const convertBtn = $('convertBtn');
+    const cancelBtn = $('cancelBtn');
+    const status = $('status');
+    const statusText = $('statusText');
+    const statusNote = $('statusNote');
+    const percent = $('percent');
+    const barFill = $('barFill');
+    const progressBar = status.querySelector('[role="progressbar"]');
+    const warning = $('warning');
+    const errorBox = $('error');
+    const result = $('result');
+    const preview = $('preview');
+    const downloadBtn = $('downloadBtn');
+
+    let selectedFile = null;
+    let ffmpeg = null;
+    let loaded = false;
+    let busy = false;
+    let cancelled = false;
+    let outputURL = '';
+    let engineURLs = [];
+    let sourceDuration = 0;
+    let lastLog = '';
+
+    const profiles = {
+      small:    { max: 1280, crf: '28', audio: '96k',  label: '軽量' },
+      standard: { max: 1920, crf: '23', audio: '128k', label: '標準' },
+      high:     { max: 1920, crf: '18', audio: '160k', label: '高画質' }
+    };
+
+    function formatBytes(bytes) {
+      if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+      const units = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+      const value = bytes / Math.pow(1024, i);
+      return `${value.toFixed(i === 0 ? 0 : value >= 100 ? 0 : 1)} ${units[i]}`;
+    }
+
+    function formatTime(seconds) {
+      if (!Number.isFinite(seconds) || seconds <= 0) return '';
+      const s = Math.round(seconds);
+      const m = Math.floor(s / 60);
+      return m ? `${m}分${String(s % 60).padStart(2, '0')}秒` : `${s}秒`;
+    }
+
+    function setProgress(value, text, note) {
+      const p = Math.max(0, Math.min(100, Math.round(value)));
+      barFill.style.width = `${p}%`;
+      percent.textContent = `${p}%`;
+      progressBar.setAttribute('aria-valuenow', String(p));
+      if (text) statusText.textContent = text;
+      if (note) statusNote.textContent = note;
+    }
+
+    function hideMessages() {
+      warning.classList.remove('show');
+      errorBox.classList.remove('show');
+      errorBox.textContent = '';
+    }
+
+    function showError(message) {
+      errorBox.textContent = message;
+      errorBox.classList.add('show');
+    }
+
+    function clearResult() {
+      result.classList.remove('show');
+      preview.removeAttribute('src');
+      preview.load();
+      if (outputURL) URL.revokeObjectURL(outputURL);
+      outputURL = '';
+    }
+
+    function safeBaseName(name) {
+      const withoutExt = name.replace(/\.[^.]+$/, '');
+      const cleaned = withoutExt.replace(/[\\/:*?"<>|\u0000-\u001F]/g, '_').trim();
+      return (cleaned || 'converted-video').slice(0, 120);
+    }
+
+    function inspectDuration(file) {
+      sourceDuration = 0;
+      const url = URL.createObjectURL(file);
+      const media = document.createElement('video');
+      media.preload = 'metadata';
+      media.onloadedmetadata = () => {
+        sourceDuration = media.duration || 0;
+        updateFileMeta();
+        URL.revokeObjectURL(url);
+      };
+      media.onerror = () => URL.revokeObjectURL(url);
+      media.src = url;
+    }
+
+    function updateFileMeta() {
+      if (!selectedFile) return;
+      const durationText = formatTime(sourceDuration);
+      $('fileMeta').textContent = [formatBytes(selectedFile.size), durationText].filter(Boolean).join(' ・ ');
+    }
+
+    function chooseFile(file) {
+      hideMessages();
+      clearResult();
+      if (!file) return;
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      if (ext !== 'mov' && file.type !== 'video/quicktime' && !file.type.startsWith('video/')) {
+        showError('動画ファイルを選択してください。iPadのMOVファイルに対応しています。');
+        return;
+      }
+      selectedFile = file;
+      $('fileName').textContent = file.name;
+      sourceDuration = 0;
+      updateFileMeta();
+      fileBox.classList.add('show');
+      convertBtn.disabled = false;
+      if (file.size > MAX_RECOMMENDED) {
+        warning.textContent = `この動画は${formatBytes(file.size)}あります。iPadではメモリ不足になる場合があります。短く分けるか、「軽量」での変換をおすすめします。`;
+        warning.classList.add('show');
+      }
+      inspectDuration(file);
+    }
+
+    function resetSelection() {
+      if (busy) return;
+      selectedFile = null;
+      sourceDuration = 0;
+      fileInput.value = '';
+      fileBox.classList.remove('show');
+      convertBtn.disabled = true;
+      status.classList.remove('show');
+      hideMessages();
+      clearResult();
+    }
+
+    async function blobURL(url, mime) {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`必要な部品を取得できませんでした（${response.status}）`);
+      const data = await response.arrayBuffer();
+      const objectURL = URL.createObjectURL(new Blob([data], { type: mime }));
+      engineURLs.push(objectURL);
+      return objectURL;
+    }
+
+    async function loadEngine() {
+      if (loaded && ffmpeg) return;
+      if (!self.FFmpegWASM || !self.FFmpegWASM.FFmpeg) {
+        throw new Error('変換プログラムを読み込めませんでした。通信状態を確認して再読み込みしてください。');
+      }
+      setProgress(2, '変換エンジンを読み込み中…', '初回のみ約32MBを読み込みます。');
+      ffmpeg = new FFmpegWASM.FFmpeg();
+      ffmpeg.on('log', ({ message }) => { lastLog = message || lastLog; });
+      ffmpeg.on('progress', ({ progress }) => {
+        if (!busy || cancelled || !Number.isFinite(progress)) return;
+        setProgress(10 + Math.max(0, Math.min(1, progress)) * 84, '動画を変換しています…', '画面を閉じず、そのままお待ちください。');
+      });
+
+      const [classWorkerURL, coreURL, wasmURL] = await Promise.all([
+        blobURL(CLASS_WORKER, 'text/javascript'),
+        blobURL(`${CORE_BASE}/ffmpeg-core.js`, 'text/javascript'),
+        blobURL(`${CORE_BASE}/ffmpeg-core.wasm`, 'application/wasm')
+      ]);
+      await ffmpeg.load({ classWorkerURL, coreURL, wasmURL });
+      loaded = true;
+    }
+
+    async function putInput(file, inputName) {
+      const dir = '/input';
+      try {
+        await ffmpeg.createDir(dir);
+      } catch (_) {}
+      try {
+        await ffmpeg.mount('WORKERFS', { files: [file] }, dir);
+        return { path: `${dir}/${file.name}`, mounted: true, dir };
+      } catch (_) {
+        setProgress(8, '動画を準備しています…', '動画を端末内の作業領域へ読み込んでいます。');
+        await ffmpeg.writeFile(inputName, new Uint8Array(await file.arrayBuffer()));
+        return { path: inputName, mounted: false, dir };
+      }
+    }
+
+    async function cleanInput(info, outputName) {
+      try { await ffmpeg.deleteFile(outputName); } catch (_) {}
+      if (!info) return;
+      if (info.mounted) {
+        try { await ffmpeg.unmount(info.dir); } catch (_) {}
+        try { await ffmpeg.deleteDir(info.dir); } catch (_) {}
+      } else {
+        try { await ffmpeg.deleteFile(info.path); } catch (_) {}
+      }
+    }
+
+    function buildArgs(inputPath, outputName, profile) {
+      const scale = `scale=w='min(${profile.max}\\,iw)':h='min(${profile.max}\\,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`;
+      return [
+        '-i', inputPath,
+        '-map', '0:v:0', '-map', '0:a:0?',
+        '-vf', `${scale},fps=30`,
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', profile.crf,
+        '-pix_fmt', 'yuv420p', '-profile:v', 'main', '-level:v', '4.1',
+        '-c:a', 'aac', '-b:a', profile.audio, '-ac', '2', '-ar', '48000',
+        '-movflags', '+faststart', '-metadata:s:v:0', 'rotate=0',
+        '-max_muxing_queue_size', '2048', outputName
+      ];
+    }
+
+    async function convert() {
+      if (!selectedFile || busy) return;
+      hideMessages();
+      clearResult();
+      busy = true;
+      cancelled = false;
+      lastLog = '';
+      convertBtn.disabled = true;
+      cancelBtn.classList.add('show');
+      status.classList.add('show');
+      setProgress(0, '準備しています…', '初回は変換エンジン（約32MB）を読み込みます。');
+
+      const quality = document.querySelector('input[name="quality"]:checked').value;
+      const profile = profiles[quality];
+      const inputName = `input_${Date.now()}.mov`;
+      const outputName = `output_${Date.now()}.mp4`;
+      let inputInfo = null;
+
+      try {
+        await loadEngine();
+        if (cancelled) return;
+        setProgress(7, '動画を準備しています…', `${formatBytes(selectedFile.size)}の動画を読み込んでいます。`);
+        inputInfo = await putInput(selectedFile, inputName);
+        if (cancelled) return;
+        setProgress(10, '動画を変換しています…', '画面を閉じず、そのままお待ちください。');
+        const exitCode = await ffmpeg.exec(buildArgs(inputInfo.path, outputName, profile));
+        if (cancelled) return;
+        if (exitCode !== 0) throw new Error(`変換処理が終了できませんでした（コード ${exitCode}）`);
+        setProgress(96, 'MP4を仕上げています…', 'まもなく完了します。');
+        const data = await ffmpeg.readFile(outputName);
+        const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+        outputURL = URL.createObjectURL(new Blob([bytes], { type: 'video/mp4' }));
+        const fileName = `${safeBaseName(selectedFile.name)}_Windows用.mp4`;
+        preview.src = outputURL;
+        downloadBtn.href = outputURL;
+        downloadBtn.download = fileName;
+        $('resultMeta').textContent = `${profile.label}・${formatBytes(bytes.byteLength)}・H.264/AAC`;
+        result.classList.add('show');
+        setProgress(100, '変換が完了しました', '下の「MP4を保存する」をタップしてください。');
+        result.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (err) {
+        if (!cancelled) {
+          console.error(err, lastLog);
+          const memoryHint = selectedFile && selectedFile.size > 200 * 1024 * 1024
+            ? ' 動画が大きい場合は、短く分けるか「軽量」でお試しください。' : '';
+          showError(`変換できませんでした。通信状態とiPadの空きメモリを確認してください。${memoryHint}`);
+          setProgress(0, '変換を完了できませんでした', 'もう一度お試しください。');
+        }
+      } finally {
+        if (ffmpeg && ffmpeg.loaded && !cancelled) await cleanInput(inputInfo, outputName);
+        busy = false;
+        convertBtn.disabled = !selectedFile;
+        cancelBtn.classList.remove('show');
+      }
+    }
+
+    function cancelConversion() {
+      if (!busy) return;
+      cancelled = true;
+      try { if (ffmpeg) ffmpeg.terminate(); } catch (_) {}
+      ffmpeg = null;
+      loaded = false;
+      busy = false;
+      convertBtn.disabled = !selectedFile;
+      cancelBtn.classList.remove('show');
+      setProgress(0, '変換を中止しました', '再度「MP4に変換する」を押すとやり直せます。');
+    }
+
+    fileInput.addEventListener('change', () => chooseFile(fileInput.files[0]));
+    $('clearBtn').addEventListener('click', resetSelection);
+    convertBtn.addEventListener('click', convert);
+    cancelBtn.addEventListener('click', cancelConversion);
+    dropZone.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); fileInput.click(); }
+    });
+    ['dragenter', 'dragover'].forEach(type => dropZone.addEventListener(type, event => { event.preventDefault(); dropZone.classList.add('drag'); }));
+    ['dragleave', 'drop'].forEach(type => dropZone.addEventListener(type, event => { event.preventDefault(); dropZone.classList.remove('drag'); }));
+    dropZone.addEventListener('drop', event => chooseFile(event.dataTransfer.files[0]));
+    window.addEventListener('beforeunload', () => {
+      if (outputURL) URL.revokeObjectURL(outputURL);
+      engineURLs.forEach(URL.revokeObjectURL);
+    });
+  </script>
+</body>
+</html>
